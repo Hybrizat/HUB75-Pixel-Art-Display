@@ -1,534 +1,505 @@
-//By mzashh https://github.com/mzashh
+//Original by mzashh https://github.com/mzashh
+//Forked by Hybrizat https://github.com/Hybrizat
 
-#define FIRMWARE_VERSION "v0.4.5b"
+#define FIRMWARE_VERSION "v0.1.0a"
 #define FILESYSTEM LittleFS
 #include <LittleFS.h>
 #include <AnimatedGIF.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
-#include <GFX_Layer.hpp>
 #include <ESPAsyncWebServer.h>
 #include "webpages.h"
 #include "time.h"
+#include <U8g2_for_Adafruit_GFX.h>
+#include <ESP32-HUB75-VirtualMatrixPanel_T.hpp>
+//#include <U8g2lib.h>
 
-#define A_PIN   22 
-#define B_PIN   32 
+// ============================================================
+//  Panel configuration area - just modify here
+// ============================================================
+
+// Resolution of each panel
+#define PANEL_WIDTH  64
+#define PANEL_HEIGHT 32
+
+// Panel array (number of columns × number of rows)
+// 1×1 = Single panel；2×1 = Two horizontal pieces；2×1 = Two vertical pieces；3×2 = Six pieces
+#define PANEL_COLS   2
+#define PANEL_ROWS   1
+
+// How you connect multiple panels（ineffective when a single block is used）：
+//   Serpentine arrangement：CHAIN_TOP_LEFT_DOWN  / CHAIN_TOP_RIGHT_DOWN
+//   ZigZag：CHAIN_TOP_LEFT_DOWN_ZZ / CHAIN_TOP_RIGHT_DOWN_ZZ
+#define CHAIN_TYPE   CHAIN_TOP_RIGHT_DOWN
+
+// Pin Configuration
+#define R1_PIN  25
+#define G1_PIN  26
+#define B1_PIN  27
+#define R2_PIN  14
+#define G2_PIN  12
+#define B2_PIN  13
+#define A_PIN   22
+#define B_PIN   32
 #define C_PIN   33
-#define D_PIN   17 
-#define E_PIN   21 
+#define D_PIN   17
+#define E_PIN   -1   // set to 17 if 1/32 scan；set to -1 if 1/16 scan
+#define LAT_PIN  4
+#define OE_PIN  15
+#define CLK_PIN 16
 
+// ============================================================
+//  Automatically calculated by configuration
+// ============================================================
+#define TOTAL_WIDTH   (PANEL_WIDTH  * PANEL_COLS)
+#define TOTAL_HEIGHT  (PANEL_HEIGHT * PANEL_ROWS)
 
-#define PANEL_RES_X 64      
-#define PANEL_RES_Y 64     
-#define PANEL_CHAIN 1      
- 
+// Clock coordinates
+#define CLOCK_Y      (TOTAL_HEIGHT / 2 - 8)
+#define CLOCK_H_X    (TOTAL_WIDTH  / 2 - 29)
+#define CLOCK_M_X    (TOTAL_WIDTH  / 2 + 3)
+#define CLOCK_DOT_X  (TOTAL_WIDTH  / 2 - 5)
+#define CLOCK_DOT_Y1 (CLOCK_Y - 1)
+#define CLOCK_DOT_Y2 (CLOCK_Y + 5)
+
+// Scrolling text Y position
+#define SCROLL_Y_SIZE1 (TOTAL_HEIGHT - 6) /2
+#define SCROLL_Y_SIZE2 (TOTAL_HEIGHT - 9) /2
+#define SCROLL_Y_SIZE3 (TOTAL_HEIGHT - 13) /2
+#define SCROLL_Y_SIZE4 (TOTAL_HEIGHT - 17) /2
+// ============================================================
 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
+U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
 
-uint16_t myBLACK = dma_display->color565(0, 0, 0);
-uint16_t myWHITE = dma_display->color565(255, 255, 255);
-uint16_t myRED = dma_display->color565(255, 0, 0);
-uint16_t myGREEN = dma_display->color565(0, 255, 0);
-uint16_t myBLUE = dma_display->color565(0, 0, 255);
-uint16_t textWidth = 0; // Width of the scrolling text
+VirtualMatrixPanel_T<CHAIN_TYPE> *virtualDisp = nullptr;
+
+// drawpixel
+inline void dispDrawPixel(int16_t x, int16_t y, uint16_t color) {
+  virtualDisp->drawPixel(x, y, color);
+}
+
+// clearscreen
+inline void dispClearScreen() {
+  virtualDisp->clearScreen();
+}
+
+uint16_t myBLACK, myWHITE, myRED, myGREEN, myBLUE;
+uint16_t textWidth = 0;
 uint16_t w, h;
-uint8_t colorR = 255; // Default Red value
-uint8_t colorG = 255; // Default Green value
-uint8_t colorB = 255; // Default Blue value
-uint8_t scrollFontSize = 2; // Default font size (1 = small, 2 = normal, 3 = big, 4 = huge)
-uint8_t scrollSpeed = 18;   // Default scroll speed (1 = fastest, 150 = slowest)
+uint8_t colorR = 255;
+uint8_t colorG = 255;
+uint8_t colorB = 255;
+uint8_t scrollFontSize = 2;
+uint8_t scrollSpeed    = 18;
 int16_t xOne, yOne;
 
-const String default_ssid = "SSID"; // Your WiFi SSID
-const String default_wifipassword = "Password"; // Your WiFi password
-const String default_httpuser = "admin"; // WebUI login id
-const String default_httppassword = "admin"; // WebUI login password
-const int default_webserverporthttp = 80;
-const char* ntpServer = "pool.ntp.org"; // NTP server
-const char* PARAM_INPUT = "value";
-const long  gmtOffset_sec = 0; // GMT Timezone Offset in seconds (change this to your own)
-const int   daylightOffset_sec = 0;
-const int maxGIFsPerPage = 4; // Change this value to set the maximum number of GIFs per page (keep this at 4)
-int textXPosition = 64;  // Will start off screen
-int textYPosition = 24;  // center of screen (half of the text height)
+const String default_ssid              = "SSID";
+const String default_wifipassword      = "PASSWORD";
+const String default_httpuser          = "admin";
+const String default_httppassword      = "admin";
+const int    default_webserverporthttp  = 80;
+const char*  ntpServer                 = "ntp.aliyun.com";
+const char*  PARAM_INPUT               = "value";
+const long   gmtOffset_sec             = 28800;
+const int    daylightOffset_sec        = 0;
+const int    maxGIFsPerPage            = 4;
 
-unsigned long lastPixelToggle = 0; // Tracks the last time the second set of pixels was drawn
-unsigned long lastScrollUpdate = 0; // Tracks the last time the text was scrolled
+int textXPosition = TOTAL_WIDTH;
+int textYPosition = TOTAL_HEIGHT / 2;
+
+unsigned long lastPixelToggle  = 0;
+unsigned long lastScrollUpdate = 0;
 unsigned long isAnimationDue;
-bool showFirstSet = true; // Default state: Clock divider colon
-bool clockEnabled = true; // Default state: Clock is enabled
-bool gifEnabled = true; // Default state: GIF playback is enabled
-bool scrollTextEnabled = false; // Default state: Scrolling text is disabled
-bool loopGifEnabled = true; // Default state: Loop GIF is enabled (reverese logic)
+bool showFirstSet      = true;
+bool clockEnabled      = true;
+bool gifEnabled        = true;
+bool scrollTextEnabled = false;
+bool loopGifEnabled    = true;
+bool lastPlayGifs      = true;
 
 String inputMessage;
-String sliderValue = "100"; //Default brightness value
-String scrollText = "Hello"; // Default Text String
-String currentGifPath = ""; // Store the current GIF file path
-String requestedGifPath = ""; // Path of the GIF requested by the user
+String sliderValue      = "100";
+String scrollText       = "Hello";
+String currentGifPath   = "";
+String requestedGifPath = "";
 
 struct Config {
-String ssid;               // wifi ssid
-String wifipassword;       // wifi password
-String httpuser;           // username to access web admin
-String httppassword;       // password to access web admin
-int webserverporthttp;     // http port number for web admin
+  String ssid;
+  String wifipassword;
+  String httpuser;
+  String httppassword;
+  int    webserverporthttp;
 };
 
+Config          config;
+bool            shouldReboot = false;
+AsyncWebServer *server;
 
- Config config;              // configuration
- bool shouldReboot = false; // schedule a reboot
- AsyncWebServer *server;   // initialise webserver
+String listFiles(bool ishtml = false);
 
-// function defaults
- String listFiles(bool ishtml = false);
+AnimatedGIF gif;
+File        f;
+int         x_offset, y_offset;
 
- AnimatedGIF gif;
- File f;
- int x_offset, y_offset;
 
- void layer_draw_callback(int16_t x, int16_t y, uint8_t r_data, uint8_t g_data, uint8_t b_data) {
-
-  dma_display->drawPixel(x,y, dma_display->color565(r_data,g_data,b_data));
-
-}
-
-// Global GFX_Layer object
-GFX_Layer gfx_layer_bg(64, 64, layer_draw_callback); // background
-GFX_Layer gfx_layer_fg(64, 64, layer_draw_callback); // foreground
-
-GFX_LayerCompositor gfx_compositor(layer_draw_callback);
-
+// ── GIFDraw ────────────────────────────────────────────────
 void GIFDraw(GIFDRAW *pDraw)
- {
-    uint8_t *s;
-    uint16_t *d, *usPalette, usTemp[320];
-    int x, y, iWidth;
+{
+  uint8_t  *s;
+  uint16_t *d, *usPalette, usTemp[320];
+  int       x, y, iWidth;
 
   iWidth = pDraw->iWidth;
-  if (iWidth > MATRIX_WIDTH)
-      iWidth = MATRIX_WIDTH;
+  if (iWidth > TOTAL_WIDTH) iWidth = TOTAL_WIDTH;
 
-    usPalette = pDraw->pPalette;
-    y = pDraw->iY + pDraw->y; // current line
-    
-    s = pDraw->pPixels;
-    if (pDraw->ucDisposalMethod == 2) // restore to background color
-    {
-      for (x=0; x<iWidth; x++)
-      {
-        if (s[x] == pDraw->ucTransparent)
-           s[x] = pDraw->ucBackground;
-      }
-      pDraw->ucHasTransparency = 0;
+  usPalette = pDraw->pPalette;
+  y = pDraw->iY + pDraw->y;
+  s = pDraw->pPixels;
+
+  if (pDraw->ucDisposalMethod == 2) {
+    for (x = 0; x < iWidth; x++) {
+      if (s[x] == pDraw->ucTransparent) s[x] = pDraw->ucBackground;
     }
+    pDraw->ucHasTransparency = 0;
+  }
 
-    if (gifEnabled) // Check if GIF playback is enabled
-    {
-    if (pDraw->ucHasTransparency) // if transparency used
-    {
+  if (gifEnabled) {
+    if (pDraw->ucHasTransparency) {
       uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
-      int x, iCount;
+      int iCount;
       pEnd = s + pDraw->iWidth;
-      x = 0;
-      iCount = 0; // count non-transparent pixels
-      while(x < pDraw->iWidth)
-      {
-        c = ucTransparent-1;
+      x = iCount = 0;
+      while (x < pDraw->iWidth) {
+        c = ucTransparent - 1;
         d = usTemp;
-        while (c != ucTransparent && s < pEnd)
-        {
+        while (c != ucTransparent && s < pEnd) {
           c = *s++;
-          if (c == ucTransparent) // done, stop
-          {
-            s--; // back up to treat it like transparent
-          }
-          else // opaque
-          {
-             *d++ = usPalette[c];
-             iCount++;
-          }
-        } // while looking for opaque pixels
-        if (iCount) // any opaque pixels?
-        {
-          for(int xOffset = 0; xOffset < iCount; xOffset++ ){
-            gfx_layer_bg.drawPixel(x + xOffset, y, usTemp[xOffset]); // 565 Color Format
-          }
-          x += iCount;
-          iCount = 0;
+          if (c == ucTransparent) { s--; }
+          else { *d++ = usPalette[c]; iCount++; }
         }
-        // no, look for a run of transparent pixels
+        if (iCount) {
+          for (int xOffset = 0; xOffset < iCount; xOffset++)
+            dispDrawPixel(x + xOffset, y, usTemp[xOffset]);
+          x += iCount; iCount = 0;
+        }
         c = ucTransparent;
-        while (c == ucTransparent && s < pEnd)
-        {
+        while (c == ucTransparent && s < pEnd) {
           c = *s++;
-          if (c == ucTransparent)
-             iCount++;
-          else
-             s--; 
+          if (c == ucTransparent) iCount++;
+          else s--;
         }
-        if (iCount)
-        {
-          x += iCount; // skip these
-          iCount = 0;
-        }
+        if (iCount) { x += iCount; iCount = 0; }
       }
-    }
-    else // does not have transparency
-    {
+    } else {
       s = pDraw->pPixels;
-      // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-      for (x=0; x<pDraw->iWidth; x++)
-      {
-        gfx_layer_bg.drawPixel(x, y, usPalette[*s++]); // color 565
-      }
-      
+      for (x = 0; x < iWidth; x++)
+        dispDrawPixel(x, y, usPalette[*s++]);
     }
-  } 
-  else
-  {     
-      gfx_layer_bg.clear(); // Clear the background layer if GIF playback is disabled
   }
-    
-    if (clockEnabled) {
-    // Request Time from internal RTC
+
+  // ── Clock ─────────────────────────────────────────────
+  if (clockEnabled) {
     struct tm timeinfo;
-    //getLocalTime(&timeinfo);
-    if(!getLocalTime(&timeinfo)){
+    if (!getLocalTime(&timeinfo)) {
       Serial.println("Failed to obtain time");
+    }
+    virtualDisp->setTextColor(dma_display->color565(colorR, colorG, colorB));
+    virtualDisp->setTextSize(2);
+    virtualDisp->setCursor(CLOCK_H_X, CLOCK_Y);
+    virtualDisp->print(&timeinfo, "%H");   // "%I"12小时；换 "%H" 切换为24小时
+    virtualDisp->setCursor(CLOCK_M_X, CLOCK_Y);
+    virtualDisp->print(&timeinfo, "%M");
+
+    if (millis() - lastPixelToggle >= 1000) {
+      showFirstSet    = !showFirstSet;
+      lastPixelToggle = millis();
+    }
+    uint16_t dotColor = showFirstSet
+      ? virtualDisp->color565(colorR, colorG, colorB)
+      : virtualDisp->color565(0, 0, 0);
+    virtualDisp->setTextColor(dotColor);
+    virtualDisp->setTextSize(1);
+    virtualDisp->setCursor(CLOCK_DOT_X, CLOCK_DOT_Y1); virtualDisp->print(".");
+    virtualDisp->setCursor(CLOCK_DOT_X, CLOCK_DOT_Y2); virtualDisp->print(".");
+  }
+
+  // ── Scrolling text ─────────────────────────────────────────
+  if (scrollTextEnabled) {
+    virtualDisp->setTextWrap(false);
+
+    if      (scrollFontSize == 1) textYPosition = SCROLL_Y_SIZE1 +4;
+    else if (scrollFontSize == 2) textYPosition = SCROLL_Y_SIZE2 +8;
+    else if (scrollFontSize == 3) textYPosition = SCROLL_Y_SIZE3 +12;
+    else if (scrollFontSize == 4) textYPosition = SCROLL_Y_SIZE4 +16;
+    else                          textYPosition = SCROLL_Y_SIZE2 +8;
+
+    byte offSet = 25;
+    unsigned long now = millis();
+    if (now > isAnimationDue) {
+      virtualDisp->setTextSize(scrollFontSize);
+      isAnimationDue = now + scrollSpeed;
+      textXPosition -= 1;
+
+      virtualDisp->getTextBounds(scrollText.c_str(), textXPosition, textYPosition,
+                                 &xOne, &yOne, &w, &h);
+      if (textXPosition + w <= 0)
+        textXPosition = virtualDisp->width() + offSet;
+
+      virtualDisp->setCursor(textXPosition, textYPosition);
+      //dma_display->drawRect(0, textYPosition - 12, dma_display->width(), 42,
+                            //dma_display->color565(0, 0, 0));
+      //dma_display->fillRect(0, textYPosition - 12, dma_display->width(), 42,
+                            //dma_display->color565(0, 0, 0));
+      virtualDisp->clearScreen();
+      for (uint8_t i = 0; i < strlen(scrollText.c_str()); i++) {
+        //dma_display->setTextColor(dma_display->color565(colorR, colorG, colorB));
+        u8g2Fonts.setForegroundColor(virtualDisp->color565(colorR, colorG, colorB));
+        u8g2Fonts.drawUTF8(textXPosition, textYPosition, scrollText.c_str());
       }
-    // Display the time in the format HH:MM (12/24H)
-    gfx_layer_fg.clear();
-    gfx_layer_fg.setTextColor(gfx_layer_fg.color565(colorR, colorG, colorB));
-    gfx_layer_fg.setTextSize(2);
-    gfx_layer_fg.setCursor(7, 24); 
-    //gfx_layer_fg.print(&timeinfo, "%H"); // print Hours from NTP 24 Hour format (Uncomment this for 24H time vice versa for 12H)
-    gfx_layer_fg.print(&timeinfo, "%I"); // print Hours from NTP 12 Hour format (Comment this out if you want 24H time vice versa for 12H)
-    gfx_layer_fg.setCursor(35, 24); 
-    gfx_layer_fg.print(&timeinfo, "%M"); // print Minutes from NTP
-
-    // Draw the hh:mm divider
-    if (millis() - lastPixelToggle >= 1000) // Check if one second has passed
-    {  
-      showFirstSet = !showFirstSet; // Toggle between the first and second set of pixels
-      lastPixelToggle = millis(); // Reset the timer
-  }
-  if (showFirstSet) {
-    // Active pixels
-    gfx_layer_fg.setTextColor(gfx_layer_fg.color565(colorR, colorG, colorB));
-    gfx_layer_fg.setTextSize(1);
-    gfx_layer_fg.setCursor(28, 28); 
-    gfx_layer_fg.print(".");
-    gfx_layer_fg.setCursor(28, 22); 
-    gfx_layer_fg.print(".");
-  } else {
-    // Dark pixels
-    gfx_layer_fg.setTextColor(gfx_layer_fg.color565(0, 0, 0));
-    gfx_layer_fg.setTextSize(1);
-    gfx_layer_fg.setCursor(28, 28); 
-    gfx_layer_fg.print(".");
-    gfx_layer_fg.setCursor(28, 22); 
-    gfx_layer_fg.print(".");
-   }
-  }  
-  else {
-    // Clear the clock display if the clock is disabled
-} 
-
-if (scrollTextEnabled) {
-  //gfx_layer_fg.clear(); // Clear the foreground layer
-  gfx_layer_fg.setTextWrap(false); // Disable text wrapping
-  
-if (scrollFontSize == 1) {
-  textYPosition = 27;
- } else if (scrollFontSize == 2) {
-  textYPosition = 24;
- } else if (scrollFontSize == 3) {
-  textYPosition = 20;
- } else if (scrollFontSize == 4) {
-  textYPosition = 16; 
- }  else {
-  textYPosition = 24;
- }
-  byte offSet = 25;
-  unsigned long now = millis();
-  if (now > isAnimationDue) 
-  {
-
-    gfx_layer_fg.setTextSize(scrollFontSize);  // size 2 == 16 pixels high
-
-    isAnimationDue = now + scrollSpeed;
-    textXPosition -= 1;
-
-    // Checking is the very right of the text off screen to the left
-    gfx_layer_fg.getTextBounds(scrollText.c_str(), textXPosition, textYPosition, &xOne, &yOne, &w, &h);
-    if (textXPosition + w <= 0) {
-      textXPosition = gfx_layer_fg.width() + offSet;
     }
-
-    gfx_layer_fg.setCursor(textXPosition, textYPosition);
-
-    // Clear the area of text to be drawn to
-    gfx_layer_fg.drawRect(0, textYPosition - 12, gfx_layer_fg.width(), 42, gfx_layer_fg.color565(0, 0, 0));
-    gfx_layer_fg.fillRect(0, textYPosition - 12, gfx_layer_fg.width(), 42, gfx_layer_fg.color565(0, 0, 0));
-
-    uint8_t w = 0;
-    for (w = 0; w < strlen(scrollText.c_str()); w++) {
-      gfx_layer_fg.setTextColor(gfx_layer_fg.color565(colorR, colorG, colorB));
-      gfx_layer_fg.print(scrollText.c_str()[w]);
-      //Serial.println(textYPosition);
-    }
-
   }
-  }
-  else {
-}
-  if (!scrollTextEnabled && !clockEnabled) { // Both scrollTextEnabled and clockEnabled are false
-    gfx_layer_fg.clear(); // Clear the foreground layer
-}
 
 } /* GIFDraw() */
 
 
-void * GIFOpenFile(const char *fname, int32_t *pSize)
- {
-  Serial.print("Playing gif: ");
-  Serial.println(fname);
+// ── GIF file I/O  ────────────────────────────────────────
+void *GIFOpenFile(const char *fname, int32_t *pSize) {
+  //Serial.print("Playing gif: "); Serial.println(fname);
   f = FILESYSTEM.open(fname);
-  if (f)
-  {
-    *pSize = f.size();
-    return (void *)&f;
-  }
+  if (f) { *pSize = f.size(); return (void *)&f; }
   return NULL;
- } /* GIFOpenFile() */
+}
 
+void GIFCloseFile(void *pHandle) {
+  File *fp = static_cast<File *>(pHandle);
+  if (fp != NULL) fp->close();
+}
 
-void GIFCloseFile(void *pHandle)
- {
-  File *f = static_cast<File *>(pHandle);
-  if (f != NULL)
-     f->close();
- } /* GIFCloseFile() */
+int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen) {
+  int32_t iBytesRead = iLen;
+  File *fp = static_cast<File *>(pFile->fHandle);
+  if ((pFile->iSize - pFile->iPos) < iLen)
+    iBytesRead = pFile->iSize - pFile->iPos - 1;
+  if (iBytesRead <= 0) return 0;
+  iBytesRead = (int32_t)fp->read(pBuf, iBytesRead);
+  pFile->iPos = fp->position();
+  return iBytesRead;
+}
 
- int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen)
- {
-    int32_t iBytesRead;
-    iBytesRead = iLen;
-    File *f = static_cast<File *>(pFile->fHandle);
-    // Note: If you read a file all the way to the last byte, seek() stops working
-    if ((pFile->iSize - pFile->iPos) < iLen)
-       iBytesRead = pFile->iSize - pFile->iPos - 1; // <-- ugly work-around
-    if (iBytesRead <= 0)
-       return 0;
-    iBytesRead = (int32_t)f->read(pBuf, iBytesRead);
-    pFile->iPos = f->position();
-    return iBytesRead;
- } /* GIFReadFile() */
-
- int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition)
- { 
-  int i = micros();
-  File *f = static_cast<File *>(pFile->fHandle);
-  f->seek(iPosition);
-  pFile->iPos = (int32_t)f->position();
-  i = micros() - i;
-//  Serial.printf("Seek time = %d us\n", i);
+int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition) {
+  File *fp = static_cast<File *>(pFile->fHandle);
+  fp->seek(iPosition);
+  pFile->iPos = (int32_t)fp->position();
   return pFile->iPos;
- } /* GIFSeekFile() */
+}
 
- unsigned long start_tick = 0;
+unsigned long start_tick = 0;
+
+void ShowGIF(char *name) {
+  // print GIF information only once
+  static String lastPlayedGif = "";  
+  bool gifInfoPrinted = true;
+
+  if (lastPlayedGif != String(name)) {
+    Serial.print("Playing gif: "); Serial.println(name);
+    lastPlayedGif = String(name);
+    gifInfoPrinted = false;
+  } else {
+    gifInfoPrinted = true;
+  }
+
+  if (gif.open(name, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
+    // print Canvas size only once
+    if (!gifInfoPrinted) {
+      Serial.printf("Successfully opened GIF; Canvas size = %d x %d\n",
+                  gif.getCanvasWidth(), gif.getCanvasHeight());
+      gifInfoPrinted = true;
+    }
+    //dma_display->clearScreen();
+    while (gif.playFrame(true, NULL) == 1) {
+      if (scrollText.length() > 0) {
+        drawScrollingText();
+      }
+      yield();
+      delay(5);
+    }
+    gif.close();
+  }
+  gifInfoPrinted = false;  // reset flag
+}
 
 
- void ShowGIF(char *name)
- {
-   start_tick = millis();
-   unsigned long lastTimeCheck = millis(); // Timer for getLocalTime 
-   if (gif.open(name, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw))
-   {
-     x_offset = (MATRIX_WIDTH - gif.getCanvasWidth())/2;
-     if (x_offset < 0) x_offset = 0;
-     y_offset = (MATRIX_HEIGHT - gif.getCanvasHeight())/2;
-     if (y_offset < 0) y_offset = 0;
-     Serial.printf("Successfully opened GIF; Canvas size = %d x %d\n", gif.getCanvasWidth(), gif.getCanvasHeight());
-     Serial.flush();
-     while (gif.playFrame(true, NULL))
-     {    
-       gfx_layer_bg.dim(150);  
-       gfx_layer_fg.dim(255);
-       gfx_compositor.Blend(gfx_layer_bg, gfx_layer_fg); // Combine the bg and the fg layer and draw it onto the panel.
+// ── tool functions ─────────────────────────────────────────────────
+void drawScrollingText() {
+  static int scrollX = TOTAL_WIDTH;
+  static unsigned long lastScrollTime = 0;
 
-       if ( (millis() - start_tick) > 50000) { // we'll get bored after about 50 seconds of the same looping gif
-         //break; // Will change to the next gif in the list after the set time.
-       }
-     }
- 
-     gif.close();
-   }
- 
- } /* ShowGIF() */
+  if (scrollText.length() == 0) return;
 
+  unsigned long now = millis();
+  if (now > isAnimationDue) {
+    isAnimationDue = now + scrollSpeed;
+    textXPosition -= 1;
+    if      (scrollFontSize == 1) textYPosition = SCROLL_Y_SIZE1;
+    else if (scrollFontSize == 2) textYPosition = SCROLL_Y_SIZE2;
+    else if (scrollFontSize == 3) textYPosition = SCROLL_Y_SIZE3;
+    else if (scrollFontSize == 4) textYPosition = SCROLL_Y_SIZE4;
+    else                          textYPosition = SCROLL_Y_SIZE2;
+    dma_display->fillRect(0, scrollFontSize, TOTAL_WIDTH, 20, myBLACK);  
+    int textWidth = u8g2Fonts.getUTF8Width(scrollText.c_str());
+
+    scrollX -= 1; 
+    if (scrollX < -textWidth) {
+      scrollX = TOTAL_WIDTH;
+    }
+  }
+}
 
 void rebootESP(String message) {
   Serial.print("Rebooting ESP32: "); Serial.println(message);
   ESP.restart();
 }
 
+String humanReadableSize(const size_t bytes) {
+  if (bytes < 1024)              return String(bytes) + " B";
+  else if (bytes < (1024*1024))  return String(bytes / 1024.0) + " KB";
+  else if (bytes < (1024*1024*1024)) return String(bytes / 1024.0 / 1024.0) + " MB";
+  else return String(bytes / 1024.0 / 1024.0 / 1024.0) + " GB";
+}
+
 String listFiles(bool ishtml, int page = 1, int pageSize = maxGIFsPerPage) {
   String returnText = "";
-  int fileIndex = 0;
+  int fileIndex  = 0;
   int startIndex = (page - 1) * pageSize;
-  int endIndex = startIndex + pageSize;
+  int endIndex   = startIndex + pageSize;
 
-  File root = FILESYSTEM.open("/");
+  File root      = FILESYSTEM.open("/");
   File foundfile = root.openNextFile();
 
   if (ishtml) {
-      returnText += "<!DOCTYPE HTML><html lang=\"en\"><head>";
-      returnText += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
-      returnText += "<meta charset=\"UTF-8\">";
-      returnText += "</head><body>";
-      returnText += "<table><tr><th>Name</th><th>Size</th><th>Preview</th><th>Actions</th></tr>";
+    returnText += "<!DOCTYPE HTML><html lang=\"en\"><head>";
+    returnText += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
+    returnText += "<meta charset=\"UTF-8\">";
+    returnText += "</head><body>";
+    returnText += "<table><tr><th>Name</th><th>Size</th><th>Preview</th><th>Actions</th></tr>";
   }
-
   while (foundfile) {
-      if (fileIndex >= startIndex && fileIndex < endIndex) {
-          if (ishtml) {
-              returnText += "<tr><td>" + String(foundfile.name()) + "</td>";
-              returnText += "<td>" + humanReadableSize(foundfile.size()) + "</td>";
-              returnText += "<td><img src=\"/file?name=" + String(foundfile.name()) + "&action=show\" width=\"64\"></td>";
-              returnText += "<td>";
-              returnText += "<button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'play')\">Play</button>";
-              returnText += "<button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'download')\">Download</button>";
-              returnText += "<button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'delete')\">Delete</button>";
-              returnText += "</td></tr>";
-          }
+    if (fileIndex >= startIndex && fileIndex < endIndex) {
+      if (ishtml) {
+        returnText += "<tr><td>" + String(foundfile.name()) + "</td>";
+        returnText += "<td>" + humanReadableSize(foundfile.size()) + "</td>";
+        returnText += "<td><img src=\"/file?name=" + String(foundfile.name()) + "&action=show\" width=\"64\"></td>";
+        returnText += "<td>";
+        returnText += "<button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'play')\">Play</button>";
+        returnText += "<button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'download')\">Download</button>";
+        returnText += "<button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'delete')\">Delete</button>";
+        returnText += "</td></tr>";
       }
-      fileIndex++;
-      foundfile = root.openNextFile();
+    }
+    fileIndex++;
+    foundfile = root.openNextFile();
   }
-
   if (ishtml) {
-      returnText += "</table>";
-      // Add the Home button
-      returnText += "<button onclick=\"window.location.href='/'\">Home</button>";
-      // Add the Previous button if applicable
-      if (page > 1) {
-          returnText += "<button onclick=\"window.location.href='/list?page=" + String(page - 1) + "'\">Previous</button>";
-      }
-      // Add the Next button if there are more files
-      if (fileIndex > endIndex) {
-          returnText += "<button onclick=\"window.location.href='/list?page=" + String(page + 1) + "'\">Next</button>";
-      }
-      // GIF select page
-      returnText += "<script>";
-      returnText += "function downloadDeleteButton(filename, action) {";
-      returnText += "    console.log(`downloadDeleteButton called with filename: ${filename}, action: ${action}`);";
-      returnText += "    const url = `/file?name=${filename}&action=${action}`;";
-      returnText += "    if (action === 'delete') {";
-      returnText += "        fetch(url).then(response => response.text()).then(data => {";
-      returnText += "            console.log(data);";
-      returnText += "            alert('File deleted successfully!');";
-      returnText += "            location.reload();";
-      returnText += "        }).catch(error => {";
-      returnText += "            console.error('Error deleting file:', error);";
-      returnText += "            alert('Failed to delete file.');";
-      returnText += "        });";
-      returnText += "    } else if (action === 'download') {";
-      returnText += "        window.open(url, '_blank');";
-      returnText += "    } else if (action === 'play') {";
-      returnText += "        fetch(url).then(response => response.text()).then(data => {";
-      returnText += "            console.log(data);";
-      returnText += "            alert('Playing file...');";
-      returnText += "        }).catch(error => {";
-      returnText += "            console.error('Error playing file:', error);";
-      returnText += "            ";
-      returnText += "        });";
-      returnText += "    }";
-      returnText += "}";
-      returnText += "</script>";
-      returnText += "</body></html>";
+    returnText += "</table>";
+    returnText += "<button onclick=\"window.location.href='/'\">Home</button>";
+    if (page > 1)
+      returnText += "<button onclick=\"window.location.href='/list?page=" + String(page-1) + "'\">Previous</button>";
+    if (fileIndex > endIndex)
+      returnText += "<button onclick=\"window.location.href='/list?page=" + String(page+1) + "'\">Next</button>";
+    returnText += "<script>";
+    returnText += "function downloadDeleteButton(filename, action) {";
+    returnText += "    const url = `/file?name=${filename}&action=${action}`;";
+    returnText += "    if (action === 'delete') {";
+    returnText += "        fetch(url).then(r=>r.text()).then(()=>{alert('File deleted!');location.reload();});";
+    returnText += "    } else if (action === 'download') {";
+    returnText += "        window.open(url, '_blank');";
+    returnText += "    } else if (action === 'play') {";
+    returnText += "        fetch(url).then(r=>r.text()).then(()=>{alert('Playing...');});";
+    returnText += "    }";
+    returnText += "}";
+    returnText += "</script>";
+    returnText += "</body></html>";
   }
-
   root.close();
   return returnText;
 }
 
 
-String humanReadableSize(const size_t bytes) {
-  if (bytes < 1024) return String(bytes) + " B";
-  else if (bytes < (1024 * 1024)) return String(bytes / 1024.0) + " KB";
-  else if (bytes < (1024 * 1024 * 1024)) return String(bytes / 1024.0 / 1024.0) + " MB";
-  else return String(bytes / 1024.0 / 1024.0 / 1024.0) + " GB";
-}
- 
-/************************* Arduino Sketch Setup and Loop() *******************************/
+// ── setup() ──────────────────────────────────────────────────
 void setup() {
-
-
-  HUB75_I2S_CFG mxconfig(
-  PANEL_RES_X,   // module width
-  PANEL_RES_Y,   // module height
-  PANEL_CHAIN    // Chain length
-  );
-
-  mxconfig.gpio.a = A_PIN;
-  mxconfig.gpio.b = B_PIN;
-  mxconfig.gpio.c = C_PIN;
-  mxconfig.gpio.d = D_PIN;
-  mxconfig.gpio.e = E_PIN;
-  
-  mxconfig.clkphase = false;
-  mxconfig.driver = HUB75_I2S_CFG::FM6126A;
-
-  // Display Setup
-  dma_display = new MatrixPanel_I2S_DMA(mxconfig);
-  dma_display->setRotation(0); // Flip display by 90°, the value can be 0-4
-  dma_display->begin();
-  dma_display->setBrightness8(sliderValue.toInt()); //0-255
-  dma_display->clearScreen();
-  
   Serial.begin(115200);
-
   Serial.print("Firmware: "); Serial.println(FIRMWARE_VERSION);
-
   Serial.println("Booting ...");
 
+  // --- HUB75 matrix setup ---
+  HUB75_I2S_CFG mxconfig;
+  mxconfig.mx_width     = PANEL_WIDTH;
+  mxconfig.mx_height    = PANEL_HEIGHT;
+  mxconfig.chain_length = PANEL_COLS * PANEL_ROWS;
+  mxconfig.gpio.r1  = R1_PIN;  mxconfig.gpio.g1  = G1_PIN;  mxconfig.gpio.b1  = B1_PIN;
+  mxconfig.gpio.r2  = R2_PIN;  mxconfig.gpio.g2  = G2_PIN;  mxconfig.gpio.b2  = B2_PIN;
+  mxconfig.gpio.a   = A_PIN;   mxconfig.gpio.b   = B_PIN;   mxconfig.gpio.c   = C_PIN;
+  mxconfig.gpio.d   = D_PIN;   mxconfig.gpio.e   = E_PIN;
+  mxconfig.gpio.lat = LAT_PIN; mxconfig.gpio.oe  = OE_PIN;  mxconfig.gpio.clk = CLK_PIN;
+  mxconfig.clkphase = false;
+
+  dma_display = new MatrixPanel_I2S_DMA(mxconfig);
+  dma_display->begin();
+  dma_display->setBrightness8(sliderValue.toInt());
+  dma_display->clearScreen();
+
+  // color
+  myBLACK = dma_display->color565(0,   0,   0);
+  myWHITE = dma_display->color565(255, 255, 255);
+  myRED   = dma_display->color565(255, 0,   0);
+  myGREEN = dma_display->color565(0,   255, 0);
+  myBLUE  = dma_display->color565(0,   0,   255);
+
+  
+
+  // --- virtual matrix ---
+  virtualDisp = new VirtualMatrixPanel_T<CHAIN_TYPE>(
+    PANEL_ROWS,
+    PANEL_COLS,
+    PANEL_WIDTH,
+    PANEL_HEIGHT
+  );
+  virtualDisp->setDisplay(*dma_display);
+  virtualDisp->clearScreen();
+  Serial.printf("Virtual panel: %d col x %d row, total %d x %d px\n",
+                PANEL_COLS, PANEL_ROWS, TOTAL_WIDTH, TOTAL_HEIGHT);
+
+  u8g2Fonts.begin(*virtualDisp);
+  u8g2Fonts.setFontDirection(0);// rotation
+  u8g2Fonts.setForegroundColor(myWHITE);  // default text color
+  u8g2Fonts.setBackgroundColor(myBLACK);   // background color
+  u8g2Fonts.setFont(u8g2_font_wqy16_t_gb2312);  // fonts
+
+  // --- LittleFS ---
   Serial.println("Mounting LittleFS ...");
   if (!LittleFS.begin(true)) {
-    // if you have not used LittleFS. before on a ESP32, it will show this error.
-    // after a reboot LittleFS. will be configured and will happily work.
     Serial.println("ERROR: Cannot mount LittleFS, Rebooting");
-    rebootESP("ERROR: Cannot mount LittleFS, Rebooting");
+    rebootESP("ERROR: Cannot mount LittleFS");
   }
-
-  Serial.begin(115200);
   Serial.println("Starting AnimatedGIFs Sketch");
-  
-  dma_display->begin();
-
-  Serial.print("Flash Free: "); Serial.println(humanReadableSize((LittleFS.totalBytes() - LittleFS.usedBytes())));
-  Serial.print("Flash Used: "); Serial.println(humanReadableSize(LittleFS.usedBytes()));
+  Serial.print("Flash Free: ");  Serial.println(humanReadableSize(LittleFS.totalBytes() - LittleFS.usedBytes()));
+  Serial.print("Flash Used: ");  Serial.println(humanReadableSize(LittleFS.usedBytes()));
   Serial.print("Flash Total: "); Serial.println(humanReadableSize(LittleFS.totalBytes()));
 
-  //Serial.println(listFiles(true, 1, maxGIFsPerPage));
-
-  Serial.println("Loading Configuration ...");
-
-  config.ssid = default_ssid;
-  config.wifipassword = default_wifipassword;
-  config.httpuser = default_httpuser;
-  config.httppassword = default_httppassword;
+  // --- WiFi ---
+  config.ssid              = default_ssid;
+  config.wifipassword      = default_wifipassword;
+  config.httpuser          = default_httpuser;
+  config.httppassword      = default_httppassword;
   config.webserverporthttp = default_webserverporthttp;
 
-  Serial.print("\nConnecting to Wifi: ");
+  Serial.print("\nConnecting to WiFi: ");
   WiFi.begin(config.ssid.c_str(), config.wifipassword.c_str());
-  (WiFi.status() != WL_CONNECTED); 
-  //{ delay(500);
-  //Serial.print("."); //Uncomment the 3 lines if you want the ESP32 to wait until the WIFI is connected
-  // }
- Serial.println("\n\nNetwork Configuration:");
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+
+  Serial.println("\n\nNetwork Configuration:");
   Serial.println("----------------------");
   Serial.print("         SSID: "); Serial.println(WiFi.SSID());
   Serial.print("  Wifi Status: "); Serial.println(WiFi.status());
@@ -542,117 +513,104 @@ void setup() {
   Serial.print("        DNS 3: "); Serial.println(WiFi.dnsIP(2));
   Serial.println();
 
-  // configure web server
+  // --- Web server ---
   Serial.println("Configuring Webserver ...");
   server = new AsyncWebServer(config.webserverporthttp);
-  configureWebServer(); // start web server
-
-  // startup web server
+  configureWebServer();
   Serial.println("Starting Webserver ...");
   server->begin();
-  
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer); // get time from NTP server
 
-  dma_display->fillScreen(dma_display->color565(0, 0, 0));
-  dma_display->setTextSize(1);
-  delay(1000);
-  dma_display->print("ID:"); dma_display->print(FIRMWARE_VERSION);  
-  dma_display->setCursor(0, 16);
-  dma_display->print("IP:"); dma_display->print(WiFi.localIP());
-  dma_display->setCursor(0, 38);  
-  dma_display->print("RSSI:"); dma_display->println(WiFi.RSSI());
-  dma_display->setCursor(0, 52);  
-  dma_display->print("SSID:"); dma_display->println(WiFi.SSID());
-  delay(1000);
-  dma_display->fillScreen(dma_display->color565(0, 0, 0));
-  gfx_layer_fg.clear();
-  gfx_layer_bg.clear();
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+  // --- Startup information display (adaptive overall resolution)---
+  virtualDisp->fillScreen(myBLACK);
+  virtualDisp->setTextSize(1);
+  virtualDisp->setTextColor(myWHITE);
+  virtualDisp->setCursor(0, 0);
+  virtualDisp->print("ID:"); virtualDisp->print(FIRMWARE_VERSION);
+  virtualDisp->setCursor(0, 9);
+  virtualDisp->print("IP:"); virtualDisp->print(WiFi.localIP());
+  if (TOTAL_HEIGHT >= 24) {
+    virtualDisp->setCursor(0, 18);
+    virtualDisp->print("RSSI:"); virtualDisp->print(WiFi.RSSI());
+  }
+  if (TOTAL_HEIGHT >= 33) {
+    virtualDisp->setCursor(0, 27);
+    virtualDisp->print("SSID:"); virtualDisp->print(WiFi.SSID());
+  }
+  delay(2000);
+
+  virtualDisp->fillScreen(myBLACK);
+  virtualDisp->clearScreen();
   gif.begin(LITTLE_ENDIAN_PIXELS);
 
+  u8g2Fonts.setCursor(10, 20);
+  u8g2Fonts.print("你好世界！测试中文");
+  delay(2000);
+  virtualDisp->clearScreen();
 }
 
- String gifDir = "/"; // play all GIFs in this directory on the SD card
- char filePath[256] = { 0 };
- File root, gifFile;
 
+// ── loop() ───────────────────────────────────────────────────
+String gifDir = "/";
+char   filePath[256] = {0};
+File   root, gifFile;
 
- void loop() {
+void loop() {
   if (shouldReboot) {
-      rebootESP("Web Admin Initiated Reboot");
+    rebootESP("Web Admin Initiated Reboot");
   }
+  
 
-  while (1) { // Run forever
-      root = FILESYSTEM.open(gifDir); // Open the root directory
-      if (root) {
-          // Check if a new GIF is requested via the play button
-          if (!requestedGifPath.isEmpty()) {
-              // Play the requested GIF and set it as the current GIF
-              currentGifPath = requestedGifPath; // Update the current GIF path
-              requestedGifPath = ""; // Clear the requested path
-
-              // Find and play the requested GIF
-              while (gifFile = root.openNextFile()) {
-                  if (String(gifFile.path()) == currentGifPath) {
-                      break;
-                  }
-              }
-
-              if (gifFile) {
-                  // Play the requested GIF
-                  memset(filePath, 0x0, sizeof(filePath));
-                  strcpy(filePath, gifFile.path());
-                  ShowGIF(filePath);
-
-                  // If looping is enabled, continue looping the requested GIF
-                  if (loopGifEnabled) {
-                      continue; // Restart the loop for the same GIF
-                  }
-              }
-          } else if (!currentGifPath.isEmpty()) {
-              // Resume from the last GIF
-              while (gifFile = root.openNextFile()) {
-                  if (String(gifFile.path()) == currentGifPath) {
-                      break;
-                  }
-              }
-          } else {
-              gifFile = root.openNextFile(); // Open the first file in the directory
-          }
-
-          while (gifFile) {
-              if (!gifFile.isDirectory()) { // Play the file if it's not a directory
-                  memset(filePath, 0x0, sizeof(filePath));
-                  strcpy(filePath, gifFile.path());
-                  currentGifPath = String(filePath); // Save the current GIF path
-
-                  // Show the GIF
-                  ShowGIF(filePath);
-
-                  // If looping is enabled, continue playing the same GIF
-                  if (loopGifEnabled) {
-                      continue; // Restart the loop for the same GIF
-                  }
-              }
-
-              if (!loopGifEnabled) {
-                  // If looping is disabled, move to the next GIF
-                  gifFile.close();      // Close the current GIF file
-                  gifFile = root.openNextFile(); // Open the next file
-
-                  // If no more files, reset to the first file
-                  if (!gifFile) {
-                      root.close(); // Close the root directory
-                      root = FILESYSTEM.open(gifDir); // Reopen the root directory
-                      gifFile = root.openNextFile(); // Start from the first file again
-                  }
-              } else {
-                  break; // Exit the loop if looping is disabled
-              }
-          }
-
-          root.close(); // Close the root directory
+  while (1) {
+    root = FILESYSTEM.open(gifDir);
+    if (root) {
+      if (!requestedGifPath.isEmpty()) {
+        currentGifPath   = requestedGifPath;
+        requestedGifPath = "";
+        while (gifFile = root.openNextFile()) {
+          if (String(gifFile.path()) == currentGifPath) break;
+        }
+        if (gifFile) {
+          memset(filePath, 0x0, sizeof(filePath));
+          strcpy(filePath, gifFile.path());
+          ShowGIF(filePath);
+          if (loopGifEnabled) continue;
+        }
+      }
+      // resume
+      else if (!currentGifPath.isEmpty()) {
+        while (gifFile = root.openNextFile()) {
+          if (String(gifFile.path()) == currentGifPath) break;
+        }
+      }
+      // from beginning
+      else {
+        gifFile = root.openNextFile();
       }
 
-      delay(10); // Pause before restarting
+      while (gifFile) {
+        if (!gifFile.isDirectory()) {
+          memset(filePath, 0x0, sizeof(filePath));
+          strcpy(filePath, gifFile.path());
+          currentGifPath = String(filePath);
+          ShowGIF(filePath);
+          if (loopGifEnabled) continue;
+        }
+        if (!loopGifEnabled) {
+          gifFile.close();
+          gifFile = root.openNextFile();
+          if (!gifFile) {
+            root.close();
+            root    = FILESYSTEM.open(gifDir);
+            gifFile = root.openNextFile();
+          }
+        } else {
+          break;
+        }
+      }
+      root.close();
+    }
+    delay(10);
   }
 }

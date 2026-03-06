@@ -72,6 +72,7 @@ void configureWebServer() {
       inputMessage = "No message sent";
     }
     Serial.print(inputMessage);
+    request->send(200, "text/plain", "OK");
     });
 
   server->on("/reboot", HTTP_GET, [](AsyncWebServerRequest * request) {
@@ -136,6 +137,7 @@ void configureWebServer() {
         gifEnabled = (state == "on"); // Update the gifEnabled variable
         Serial.printf("GIF playback state changed: %s\n", gifEnabled ? "ON" : "OFF");
         request->send(200, "text/plain", "GIF playback state updated");
+        virtualDisp->clearScreen();
     } else {
         request->send(400, "text/plain", "Missing 'state' parameter");
     }
@@ -161,6 +163,7 @@ void configureWebServer() {
       }
       Serial.printf("Clock state changed: %s\n", clockEnabled ? "ON" : "OFF");
       request->send(200, "text/plain", "Clock state updated");
+      virtualDisp->clearScreen();
   } else {
       request->send(400, "text/plain", "Missing 'state' parameter");
   }
@@ -175,6 +178,7 @@ server->on("/toggleScrollText", HTTP_GET, [](AsyncWebServerRequest *request) {
       }
       Serial.printf("Scrolling text state changed: %s\n", scrollTextEnabled ? "ON" : "OFF");
       request->send(200, "text/plain", "Scrolling text state updated");
+      virtualDisp->clearScreen();
   } else {
       request->send(400, "text/plain", "Missing 'state' parameter");
   }
@@ -219,11 +223,10 @@ server->on("/toggleScrollText", HTTP_GET, [](AsyncWebServerRequest *request) {
             request->send(200, "text/plain", "Deleted File: " + String(fileName));
           }
           else if (strcmp(fileAction, "play") == 0) {
-            requestedGifPath = fileName; // Store the requested GIF path
-            //gif.close();
-            //dma_display->fillScreen(dma_display->color565(0, 0, 0));
+            requestedGifPath = fileName;
             gifFile = FILESYSTEM.open(fileName);
             logmessage += " opening";
+            request->send(200, "text/plain", "Playing: " + String(fileName));
           }
            else if (strcmp(fileAction, "show") == 0) {
             logmessage += " previewing"; 
