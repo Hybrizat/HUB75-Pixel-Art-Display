@@ -52,6 +52,10 @@ Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 <img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/error.jpg" width="823">
 </p>
 Please set the "Core Debugging Level" in the Arduino IDE to any option other than "None". I have no idea what caused this, but enable core debugging can make it work normally.
+<p align="center">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/solution.png" width="823">
+</p>
+
 - The scroll speed will be slow if the text is too long
 - GIFs do not scale at different resolutions (it's working as designed. I didn't add a "scaling" function. )
 
