@@ -8,6 +8,9 @@ Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 
 ## Changelog
 
+### Version 0.1.1a (Bug Fix)
+- Fixed : the clock display don't refresh
+
 ### Version 0.1.0a (Major Update)
 - Added **Multiple Panel Support**.
 - Added **UTF-8 Support** for Scrolling Text.
