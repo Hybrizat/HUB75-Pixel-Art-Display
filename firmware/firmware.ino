@@ -1,7 +1,7 @@
 //Original by mzashh https://github.com/mzashh
 //Forked by Hybrizat https://github.com/Hybrizat
 
-#define FIRMWARE_VERSION "v0.1.0a"
+#define FIRMWARE_VERSION "v0.1.1a"
 #define FILESYSTEM LittleFS
 #include <LittleFS.h>
 #include <AnimatedGIF.h>
@@ -108,6 +108,7 @@ const int    maxGIFsPerPage            = 4;
 
 int textXPosition = TOTAL_WIDTH;
 int textYPosition = TOTAL_HEIGHT / 2;
+int last_minute = -1;
 
 unsigned long lastPixelToggle  = 0;
 unsigned long lastScrollUpdate = 0;
@@ -211,6 +212,11 @@ void GIFDraw(GIFDRAW *pDraw)
     virtualDisp->print(&timeinfo, "%H");   // "%I"12小时；换 "%H" 切换为24小时
     virtualDisp->setCursor(CLOCK_M_X, CLOCK_Y);
     virtualDisp->print(&timeinfo, "%M");
+    //refresh clock every minute
+    if (timeinfo.tm_min != last_minute) {
+        virtualDisp->fillRect(CLOCK_H_X, CLOCK_Y, 54, 14, myBLACK);
+        last_minute = timeinfo.tm_min;
+    }
 
     if (millis() - lastPixelToggle >= 1000) {
       showFirstSet    = !showFirstSet;
@@ -347,7 +353,7 @@ void drawScrollingText() {
     else if (scrollFontSize == 3) textYPosition = SCROLL_Y_SIZE3;
     else if (scrollFontSize == 4) textYPosition = SCROLL_Y_SIZE4;
     else                          textYPosition = SCROLL_Y_SIZE2;
-    dma_display->fillRect(0, scrollFontSize, TOTAL_WIDTH, 20, myBLACK);  
+    virtualDisp->fillRect(0, scrollFontSize, TOTAL_WIDTH, 20, myBLACK);  
     int textWidth = u8g2Fonts.getUTF8Width(scrollText.c_str());
 
     scrollX -= 1; 
