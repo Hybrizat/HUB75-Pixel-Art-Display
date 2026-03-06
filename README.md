@@ -2,80 +2,69 @@
 
 A Wi-Fi-enabled LED Pixel Art Display based on HUB75E panels, powered by an ESP32.
 
-> **Note**: The colors are much more vibrant in person, and the flickering only appears on camera.
-
-<p align="center">
-<img src="https://github.com/mzashh/HUB75-Pixel-Art-Display/blob/main/images/display.jpg" width="500">
-</p>
-
-<p align="center">
-<img src="https://github.com/mzashh/HUB75-Pixel-Art-Display/blob/main/images/preview.gif" width="500">
-</p>
+Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 
 ---
 
 ## Changelog
 
-### Version 0.4.5a (Major Update)
-- Added an **NTP Clock**.
-- Added **Scrolling Custom Text**.
-- Clock and text colors can now be changed via the WebUI.
-- Text font and scroll speed are configurable.
-- Added toggles for:
-  - GIF display
-  - Clock
-  - Scrolling text
-- Added a toggle for GIF looping.
-
-### Version 0.2.5a
-- Switched the file system to **LittleFS**.
+### Version 0.1.0a (Major Update)
+- Added **Multiple Panel Support**.
+- Added **UTF-8 Support** for Scrolling Text.
+- Better look WebUI.
 
 ---
 
-## Features
+## New Features
 
-- **Wi-Fi Connectivity**: On startup, the panel connects to the Wi-Fi network and displays the firmware version, IP address, RSSI, and Wi-Fi SSID for 4 seconds.
-- **GIF Playback**: Plays GIF files stored in the ESP32's SPI Flash.
-- **NTP Clock**: Displays the current time (configurable GMT and DST offsets in the firmware).
+- **Multiple Panel Support**: You can link multiple panels and use different arrangements.
+<p align="center">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/test1.jpg" width="823">
+<p align="center">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/test2.jpg" width="823">
+
+- **UTF-8 Character Support**: Scrolling text now support UTF-8 Charactors (depends on the font you are using). Default using
+<p align="center">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/test_cn.jpg" width="823">
+<p align="center">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/test_jp.jpg" width="823">
+
 - **WebUI**:
-  - Upload, delete, download, and play GIF files.
-  - Control brightness via a slider.
-  - Authentication functionality for secure access.
-  - Remote rebooting of the ESP32.
-- **Custom Scrolling Text**: Replace the clock with custom scrolling text.
-- **WebUI Customization**:
-  - Change text and clock colors.
-  - Adjust text scroll speed and size.
-- **Playback Toggles**:
-  - Enable or disable GIF playback, clock, or scrolling text individually.
-  - Toggle GIF looping to either loop a single GIF or play all stored GIFs sequentially.
+  - Added a color selection palette.
+  - Can directly input hexadecimal color codes.
+  - Added color preview.
+  - Support direct input of brightness values.
+  - Set the color to dark mode.
 
 <p align="center">
-<img src="https://github.com/mzashh/HUB75-Pixel-Art-Display/blob/main/images/WUI.png" width="823" height="600">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/webpage.png" width="823">
 </p>
 
 ---
 
-## Planned Features
+## Known issues
 
-> These features are tentative and may not be implemented due to time constraints or motivation.
+> Yes, I know there are several problems, but I don't know how to fix it for now..
 
-- Proper date system
-- Weather display
-- Additional clock types and faces
-- Canvas drawing functionality
-- Stopwatch/Timer/Pomodoro modes
+- If both "Play GIFs" and "Scrolling Text" are turned on at the same time, serious flickering will occur. The buttons on the WebUI have been set to be mutually exclusive.
+- If only the scan lines are displayed:
+<p align="center">
+<img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/error.jpg" width="823">
+</p>
+Please set the "Core Debugging Level" in the Arduino IDE to any option other than "None". I have no idea what caused this, but enable core debugging can make it work normally.
+- The scroll speed will be slow if the text is too long
+- GIFs do not scale at different resolutions (it's working as designed. I didn't add a "scaling" function. )
 
 ---
 
 ## Hardware Requirements
 
-- **HUB75 Panel**: Compatible with the [ESP32-HUB75-MatrixPanel-DMA library](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA). By default, a 64x64 1/32 scan panel is supported.
-- **ESP32 Board**: ESP32, ESP32-S2, or ESP32-S3.
+- **HUB75 Panel**: Compatible with the [ESP32-HUB75-MatrixPanel-DMA library](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA). Tested on two 64x32 1/16 scan panel.
+- **ESP32 Board**: Tested only on ESP32, other models may work.
 
 ### Pin Configuration
 
-> **Note**: GPIO 34+ on the ESP32 are input-only. GPIO 5, 23, 18, and 19 are reserved for future SD card support.
+> **Note**: GPIO 34+ on the ESP32 are input-only. GPIO 5, 23, 18, and 19 are reserved for future SD card support. If a 1/16 scan panel is used , pin E can set to -1 (disabled).
 
 | Panel | ESP32 GPIO Pin |
 |--------|----------|
@@ -98,15 +87,13 @@ A Wi-Fi-enabled LED Pixel Art Display based on HUB75E panels, powered by an ESP3
 
 ## Firmware
 
-### Development Tools
-- **Arduino IDE** (v1.8.19) or **PlatformIO**.
-
 ### Required Libraries
-- [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA)
+- [ESP32-HUB75-MatrixPanel-DMA](https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA)
 - [AnimatedGIF](https://github.com/bitbank2/AnimatedGIF)
 - [GFX_Lite](https://github.com/mrcodetastic/GFX_Lite)
 - [ESPAsyncWebServer](https://github.com/me-no-dev/ESPAsyncWebServer)
 - [AsyncTCP](https://github.com/me-no-dev/AsyncTCP)
+- [U8g2_for_Adafruit_GFX](https://github.com/olikraus/U8g2_for_Adafruit_GFX)
 
 ### Configuration
 - **Wi-Fi**:
@@ -116,23 +103,24 @@ A Wi-Fi-enabled LED Pixel Art Display based on HUB75E panels, powered by an ESP3
 - **Brightness**:
   - Set the default brightness in `firmware.ino` (range: 0–255).
 - **Panel Resolution**:
-  - Use other resolution panels as per the examples in the [ESP32-HUB75-MatrixPanel-DMA library](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA).
+  - Set the resolution of single panel and how they arranged in `firmware.ino`.(`PANEL_WIDTH` `PANEL_HEIGHT` `PANEL_COLS` `PANEL_ROWS` and `CHAIN_TYPE`)
 - **Authentication**:
   - Disable authentication by changing `false` to `true` on line 258 in `webserver.ino`.
+- **Fonts**
+  - using `u8g2_font_wqy16_t_gb2312` by default. Supports most commonly used Chinese characters, Hiragana, and Katakana. If you want to use Japnese Kanji or Korean please select a [different font](https://github.com/olikraus/u8g2/blob/master/doc/u8g2fntlistall.pdf)
 
 ---
 
 ## Case and Assembly
 
-> For smooth assembly and answers to most questions, refer to the project documentation on my website.
+> Visit the original author's website for more information.
 
 - **3D Printable Files for the Case and the Diffuser**:
   - [Printables](https://www.printables.com/model/875329-hub75-pixel-art-display-case)
 - **Project Documentation and Assembly**:
-  - [My Website](https://mzashh.weebly.com/pixel-art-display.html)
+  - [Mzashh's Website](https://mzashh.weebly.com/pixel-art-display.html)
    
 
-## Credits
+## Declaration
 
-- **GIF Playback**: Based on examples from the [ESP32-HUB75-MatrixPanel-DMA library](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-DMA).
-- **WebUI**: Inspired by the [ESP32 Async WebServer File Upload Example](https://github.com/smford/esp32-asyncwebserver-fileupload-example).
+- This project was completed with the assistance of AI.
