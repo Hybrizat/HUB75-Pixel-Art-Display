@@ -312,22 +312,11 @@ function setColor() {
 
 // Toggles — _suppress prevents mutual-disable infinite recursion
 var _suppress = false;
-// GIF 开关（新增与 scrollText 的互斥）
 function toggleGIF(cb) {
-  if (cb.checked && !_suppress) {
-    var st = document.getElementById('scrollTextToggle');
-    if (st.checked) {
-      st.checked = false;
-      _suppress = true;
-      fetch('/toggleScrollText?state=off').catch(function(){});
-      _suppress = false;
-      showStatus('滚动文字已自动关闭（与 GIF 互斥）');
-    }
-  }
-  fetch('/toggleGIF?state=' + (cb.checked ? 'on' : 'off'))
-    .then(r => r.text())
-    .then(() => showStatus('GIF 播放: ' + (cb.checked ? 'ON' : 'OFF')))
-    .catch(() => showStatus('Error'));
+  fetch('/toggleGIF?state='+(cb.checked?'on':'off'))
+    .then(function(r){return r.text();})
+    .then(function(){ showStatus('GIF playback: '+(cb.checked?'ON':'OFF')); })
+    .catch(function(){ showStatus('Error'); });
 }
 function toggleLoopGif(cb) {
   fetch('/toggleLoopGif?state='+(cb.checked?'on':'off'))
@@ -350,10 +339,8 @@ function toggleClock(cb) {
     .then(function(){ showStatus('Clock: '+(cb.checked?'ON':'OFF')); })
     .catch(function(){ showStatus('Error'); });
 }
-// 滚动文字开关（保持与 clock 的互斥 + 新增与 GIF 的互斥）
 function toggleScrollText(cb) {
   if (cb.checked && !_suppress) {
-    // 原有：与 clock 互斥
     var ck = document.getElementById('clockToggle');
     if (ck.checked) {
       ck.checked = false;
@@ -361,22 +348,11 @@ function toggleScrollText(cb) {
       fetch('/toggleClock?state=off').catch(function(){});
       _suppress = false;
     }
-
-    // 新增：与 GIF 互斥
-    var gif = document.getElementById('gifToggle');  // 假设你的 GIF 开关 id 是 gifToggle
-    if (gif && gif.checked) {
-      gif.checked = false;
-      _suppress = true;
-      fetch('/toggleGIF?state=off').catch(function(){});
-      _suppress = false;
-      showStatus('GIF 播放已自动关闭（与滚动文字互斥）');
-    }
   }
-
-  fetch('/toggleScrollText?state=' + (cb.checked ? 'on' : 'off'))
-    .then(r => r.text())
-    .then(() => showStatus('滚动文字: ' + (cb.checked ? 'ON' : 'OFF')))
-    .catch(() => showStatus('Error'));
+  fetch('/toggleScrollText?state='+(cb.checked?'on':'off'))
+    .then(function(r){return r.text();})
+    .then(function(){ showStatus('Scroll text: '+(cb.checked?'ON':'OFF')); })
+    .catch(function(){ showStatus('Error'); });
 }
 
 // Scroll text — encodeURIComponent keeps UTF-8 byte sequences intact

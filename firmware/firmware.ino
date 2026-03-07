@@ -1,7 +1,7 @@
 //Original by mzashh https://github.com/mzashh
 //Forked by Hybrizat https://github.com/Hybrizat
 
-#define FIRMWARE_VERSION "v0.1.1a"
+#define FIRMWARE_VERSION "v0.1.2a"
 #define FILESYSTEM LittleFS
 #include <LittleFS.h>
 #include <AnimatedGIF.h>
@@ -64,10 +64,10 @@
 #define CLOCK_DOT_Y2 (CLOCK_Y + 5)
 
 // Scrolling text Y position
-#define SCROLL_Y_SIZE1 (TOTAL_HEIGHT - 6) /2
-#define SCROLL_Y_SIZE2 (TOTAL_HEIGHT - 9) /2
-#define SCROLL_Y_SIZE3 (TOTAL_HEIGHT - 13) /2
-#define SCROLL_Y_SIZE4 (TOTAL_HEIGHT - 17) /2
+#define SCROLL_Y_SIZE1 ((TOTAL_HEIGHT - 6)  / 2)
+#define SCROLL_Y_SIZE2 ((TOTAL_HEIGHT - 9)  / 2)
+#define SCROLL_Y_SIZE3 ((TOTAL_HEIGHT - 13) / 2)
+#define SCROLL_Y_SIZE4 ((TOTAL_HEIGHT - 17) / 2)
 // ============================================================
 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
@@ -200,71 +200,11 @@ void GIFDraw(GIFDRAW *pDraw)
     }
   }
 
-  // ── Clock ─────────────────────────────────────────────
-  if (clockEnabled) {
-    struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
-      Serial.println("Failed to obtain time");
-    }
-    virtualDisp->setTextColor(dma_display->color565(colorR, colorG, colorB));
-    virtualDisp->setTextSize(2);
-    virtualDisp->setCursor(CLOCK_H_X, CLOCK_Y);
-    virtualDisp->print(&timeinfo, "%H");   // "%I"12小时；换 "%H" 切换为24小时
-    virtualDisp->setCursor(CLOCK_M_X, CLOCK_Y);
-    virtualDisp->print(&timeinfo, "%M");
-    //refresh clock every minute
-    if (timeinfo.tm_min != last_minute) {
-        virtualDisp->fillRect(CLOCK_H_X, CLOCK_Y, 54, 14, myBLACK);
-        last_minute = timeinfo.tm_min;
-    }
-
-    if (millis() - lastPixelToggle >= 1000) {
-      showFirstSet    = !showFirstSet;
-      lastPixelToggle = millis();
-    }
-    uint16_t dotColor = showFirstSet
-      ? virtualDisp->color565(colorR, colorG, colorB)
-      : virtualDisp->color565(0, 0, 0);
-    virtualDisp->setTextColor(dotColor);
-    virtualDisp->setTextSize(1);
-    virtualDisp->setCursor(CLOCK_DOT_X, CLOCK_DOT_Y1); virtualDisp->print(".");
-    virtualDisp->setCursor(CLOCK_DOT_X, CLOCK_DOT_Y2); virtualDisp->print(".");
-  }
-
-  // ── Scrolling text ─────────────────────────────────────────
-  if (scrollTextEnabled) {
-    virtualDisp->setTextWrap(false);
-
-    if      (scrollFontSize == 1) textYPosition = SCROLL_Y_SIZE1 +4;
-    else if (scrollFontSize == 2) textYPosition = SCROLL_Y_SIZE2 +8;
-    else if (scrollFontSize == 3) textYPosition = SCROLL_Y_SIZE3 +12;
-    else if (scrollFontSize == 4) textYPosition = SCROLL_Y_SIZE4 +16;
-    else                          textYPosition = SCROLL_Y_SIZE2 +8;
-
-    byte offSet = 25;
-    unsigned long now = millis();
-    if (now > isAnimationDue) {
-      virtualDisp->setTextSize(scrollFontSize);
-      isAnimationDue = now + scrollSpeed;
-      textXPosition -= 1;
-
-      virtualDisp->getTextBounds(scrollText.c_str(), textXPosition, textYPosition,
-                                 &xOne, &yOne, &w, &h);
-      if (textXPosition + w <= 0)
-        textXPosition = virtualDisp->width() + offSet;
-
-      virtualDisp->setCursor(textXPosition, textYPosition);
-      //dma_display->drawRect(0, textYPosition - 12, dma_display->width(), 42,
-                            //dma_display->color565(0, 0, 0));
-      //dma_display->fillRect(0, textYPosition - 12, dma_display->width(), 42,
-                            //dma_display->color565(0, 0, 0));
-      virtualDisp->clearScreen();
-      for (uint8_t i = 0; i < strlen(scrollText.c_str()); i++) {
-        //dma_display->setTextColor(dma_display->color565(colorR, colorG, colorB));
-        u8g2Fonts.setForegroundColor(virtualDisp->color565(colorR, colorG, colorB));
-        u8g2Fonts.drawUTF8(textXPosition, textYPosition, scrollText.c_str());
-      }
-    }
+  // Clock and scroll text are drawn ONCE per frame in ShowGIF(),
+  // not here. GIFDraw is called PANEL_HEIGHT times per frame;
+  // any clear/draw in here causes severe flickering.
+  if (pDraw->y == pDraw->iHeight - 1) {
+    renderOverlays();
   }
 
 } /* GIFDraw() */
@@ -302,67 +242,119 @@ int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition) {
 }
 
 unsigned long start_tick = 0;
+// ── drawClock: called once per frame from ShowGIF ────────────────
+// Fixes: getLocalTime called per-scanline → now per-frame
+//        fillRect was called AFTER print (cleared just-drawn text) → now BEFORE
+void drawClock() {
+  if (!clockEnabled) return;
 
-void ShowGIF(char *name) {
-  // print GIF information only once
-  static String lastPlayedGif = "";  
-  bool gifInfoPrinted = true;
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return;
 
-  if (lastPlayedGif != String(name)) {
-    Serial.print("Playing gif: "); Serial.println(name);
-    lastPlayedGif = String(name);
-    gifInfoPrinted = false;
-  } else {
-    gifInfoPrinted = true;
+  // If minute changed: clear the digit area FIRST, then redraw
+  // (old code cleared AFTER drawing, causing a one-frame blank flash)
+  if (timeinfo.tm_min != last_minute) {
+    virtualDisp->fillRect(CLOCK_H_X, CLOCK_Y, 54, 14, myBLACK);
+    last_minute = timeinfo.tm_min;
   }
 
-  if (gif.open(name, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
-    // print Canvas size only once
-    if (!gifInfoPrinted) {
-      Serial.printf("Successfully opened GIF; Canvas size = %d x %d\n",
-                  gif.getCanvasWidth(), gif.getCanvasHeight());
-      gifInfoPrinted = true;
-    }
-    //dma_display->clearScreen();
-    while (gif.playFrame(true, NULL) == 1) {
-      if (scrollText.length() > 0) {
-        drawScrollingText();
-      }
-      yield();
-      delay(5);
-    }
-    gif.close();
+  virtualDisp->setTextColor(dma_display->color565(colorR, colorG, colorB));
+  virtualDisp->setTextSize(2);
+  virtualDisp->setCursor(CLOCK_H_X, CLOCK_Y);
+  virtualDisp->print(&timeinfo, "%H");
+  virtualDisp->setCursor(CLOCK_M_X, CLOCK_Y);
+  virtualDisp->print(&timeinfo, "%M");
+
+  // Blinking colon dots
+  if (millis() - lastPixelToggle >= 1000) {
+    showFirstSet    = !showFirstSet;
+    lastPixelToggle = millis();
   }
-  gifInfoPrinted = false;  // reset flag
+  uint16_t dotColor = showFirstSet
+    ? virtualDisp->color565(colorR, colorG, colorB)
+    : virtualDisp->color565(0, 0, 0);
+  virtualDisp->setTextColor(dotColor);
+  virtualDisp->setTextSize(1);
+  virtualDisp->setCursor(CLOCK_DOT_X, CLOCK_DOT_Y1); virtualDisp->print(".");
+  virtualDisp->setCursor(CLOCK_DOT_X, CLOCK_DOT_Y2); virtualDisp->print(".");
 }
 
-
-// ── tool functions ─────────────────────────────────────────────────
+// ── drawScrollingText: called once per frame from ShowGIF ─────────
+// Fixes:
+//   - was in GIFDraw (per-scanline) → clearScreen called 32× per frame → severe flicker
+//   - had redundant scrollX local var diverging from textXPosition
+//   - drawUTF8() was called inside a for-loop (drew full text strlen times)
+//   - getUTF8Width() called every frame on full string → cached now
 void drawScrollingText() {
-  static int scrollX = TOTAL_WIDTH;
-  static unsigned long lastScrollTime = 0;
+  if (!scrollTextEnabled || scrollText.length() == 0) return;
 
-  if (scrollText.length() == 0) return;
+  // Cache text width; recompute only when text content changes
+  static String  cachedText  = "";
+  static int16_t cachedWidth = 0;
+  if (scrollText != cachedText) {
+    cachedText  = scrollText;
+    cachedWidth = (int16_t)u8g2Fonts.getUTF8Width(scrollText.c_str());
+    textXPosition = TOTAL_WIDTH;  // reset scroll position on text change
+  }
+
+  textYPosition = SCROLL_Y_SIZE2; // u8g2 fonts don't support scaling
+
+  // Approximate pixel height for the clear band (u8g2 16px font)
+  const int16_t textH = 16;
 
   unsigned long now = millis();
   if (now > isAnimationDue) {
     isAnimationDue = now + scrollSpeed;
     textXPosition -= 1;
-    if      (scrollFontSize == 1) textYPosition = SCROLL_Y_SIZE1;
-    else if (scrollFontSize == 2) textYPosition = SCROLL_Y_SIZE2;
-    else if (scrollFontSize == 3) textYPosition = SCROLL_Y_SIZE3;
-    else if (scrollFontSize == 4) textYPosition = SCROLL_Y_SIZE4;
-    else                          textYPosition = SCROLL_Y_SIZE2;
-    virtualDisp->fillRect(0, scrollFontSize, TOTAL_WIDTH, 20, myBLACK);  
-    int textWidth = u8g2Fonts.getUTF8Width(scrollText.c_str());
+    if (textXPosition < -cachedWidth)
+      textXPosition = TOTAL_WIDTH + 25;
 
-    scrollX -= 1; 
-    if (scrollX < -textWidth) {
-      scrollX = TOTAL_WIDTH;
+    // Clear only GIF is off
+    if (!gifEnabled) {
+      virtualDisp->fillRect(0, textYPosition - (0.5 * textH), TOTAL_WIDTH, textH + 3, myBLACK);
     }
+
+    // Draw once (NOT in a for-loop)
+    u8g2Fonts.setForegroundColor(virtualDisp->color565(colorR, colorG, colorB));
+    u8g2Fonts.drawUTF8(textXPosition, textYPosition + (0.5 * textH), scrollText.c_str());
   }
 }
 
+// renderOverlays: one call draws clock + scroll text once
+// Called from ShowGIF (once per GIF frame) AND from loop() when no
+// GIF is playing, so overlays always appear regardless of GIF state.
+void renderOverlays() {
+  drawClock();
+  drawScrollingText();
+}
+
+void ShowGIF(char *name) {
+  static String lastPlayedGif = "";
+  static bool ifnewgif = false;
+  if (lastPlayedGif != String(name)) {
+    Serial.print("Playing gif: "); Serial.println(name);
+    ifnewgif = true;
+    lastPlayedGif = String(name);
+  }
+
+  if (gif.open(name, GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
+    if (ifnewgif) {
+      Serial.printf("Canvas size = %d x %d\n", gif.getCanvasWidth(), gif.getCanvasHeight());
+      ifnewgif = false;
+    }
+    // playFrame returns 0 when the animation ends, positive while frames remain
+    // (was incorrectly compared to == 1, missing multi-delay frames)
+    int frameResult;
+    do {
+      frameResult = gif.playFrame(true, NULL);
+      //renderOverlays();  // draw on top of completed GIF frame
+      yield();
+    } while (frameResult != 0);
+    gif.close();
+  }
+}
+
+//─────────────────── tool functions ────────────────────────────────
 void rebootESP(String message) {
   Serial.print("Rebooting ESP32: "); Serial.println(message);
   ESP.restart();
@@ -617,6 +609,7 @@ void loop() {
       }
       root.close();
     }
+    renderOverlays();
     delay(10);
   }
 }

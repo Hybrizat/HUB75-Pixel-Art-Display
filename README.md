@@ -8,8 +8,12 @@ Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 
 ## Changelog
 
+### Version 0.1.2a (Bug Fix)
+- Fixed : Scrolling Text works with GIFs now.
+- Fixed : Long Scrolling Text won't cause lag any more.
+
 ### Version 0.1.1a (Bug Fix)
-- Fixed : the clock display don't refresh
+- Fixed : the clock display don't refresh.
 
 ### Version 0.1.0a (Major Update)
 - Added **Multiple Panel Support**.
@@ -26,7 +30,7 @@ Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 <p align="center">
 <img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/test2.jpg" width="823">
 
-- **UTF-8 Character Support**: Scrolling text now support UTF-8 Charactors (depends on the font you are using). Default using
+- **UTF-8 Character Support**: Scrolling text now support UTF-8 Charactors (depends on the font you are using). Default using `u8g2_font_wqy16_t_gb2312`.
 <p align="center">
 <img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/test_cn.jpg" width="823">
 <p align="center">
@@ -49,8 +53,9 @@ Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 
 > Yes, I know there are several problems, but I don't know how to fix it for now..
 
-- If both "Play GIFs" and "Scrolling Text" are turned on at the same time, serious flickering will occur. The buttons on the WebUI have been set to be mutually exclusive.
-- If only the scan lines are displayed:
+- The Font Size setting of Scrolling text on WebUI does nothing. Because u8g2 fonts don't support scaling.
+- Rolling speed doesn't work properly.
+- If only the scan lines are displayed and got no output on pin D:
 <p align="center">
 <img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/error.jpg" width="823">
 </p>
@@ -59,7 +64,6 @@ Please set the "Core Debugging Level" in the Arduino IDE to any option other tha
 <img src="https://github.com/Hybrizat/HUB75-Pixel-Art-Display/blob/main/images/solution.png" width="823">
 </p>
 
-- The scroll speed will be slow if the text is too long
 - GIFs do not scale at different resolutions (it's working as designed. I didn't add a "scaling" function. )
 
 ---
@@ -114,7 +118,7 @@ Please set the "Core Debugging Level" in the Arduino IDE to any option other tha
 - **Authentication**:
   - Disable authentication by changing `false` to `true` on line 258 in `webserver.ino`.
 - **Fonts**
-  - using `u8g2_font_wqy16_t_gb2312` by default. Supports most commonly used Chinese characters, Hiragana, and Katakana. If you want to use Japnese Kanji or Korean please select a [different font](https://github.com/olikraus/u8g2/blob/master/doc/u8g2fntlistall.pdf)
+  - using `u8g2_font_wqy16_t_gb2312` by default. Supports most commonly used Chinese characters, Hiragana, and Katakana. If you want to use Japnese Kanji or Korean please select a [different font](https://github.com/olikraus/u8g2/blob/master/doc/u8g2fntlistall.pdf).
 
 ---
 
