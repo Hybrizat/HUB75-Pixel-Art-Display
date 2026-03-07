@@ -11,6 +11,7 @@ Based on [mzashh's project](https://github.com/mzashh/HUB75-Pixel-Art-Display)
 ### Version 0.1.2a (Bug Fix)
 - Fixed : Scrolling Text works with GIFs now.
 - Fixed : Long Scrolling Text won't cause lag any more.
+- Better looking file list.
 
 ### Version 0.1.1a (Bug Fix)
 - Fixed : the clock display don't refresh.

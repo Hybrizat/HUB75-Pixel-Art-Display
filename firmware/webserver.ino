@@ -23,6 +23,62 @@ String processor(const String& var) {
     return String();
 }
 
+// 新增函数：生成文件列表 HTML（提取出来，便于复用）
+String generateFileList(int page, int perPage) {
+  String html = "";
+  File root = LittleFS.open("/");
+  File file = root.openNextFile();
+  int totalFiles = 0;
+  while (file) {
+    totalFiles++;
+    file.close();
+    file = root.openNextFile();
+  }
+  root.close();
+
+  int start = (page - 1) * perPage;
+  int end = start + perPage;
+  int current = 0;
+
+  root = LittleFS.open("/");
+  file = root.openNextFile();
+  while (file) {
+    if (current >= start && current < end) {
+      String filename = file.name();
+      html += "<div class=\"file-item\">";
+      html += "<span class=\"file-name\">" + filename + "</span>";
+      // 新增：图片预览（假设文件名以 .gif/.jpg/.png 结尾）
+      if (filename.endsWith(".gif") || filename.endsWith(".jpg") || filename.endsWith(".png")) {
+        html += "<img src=\"/file?name=" + filename + "&action=show\" style=\"width:80px; height:auto; margin-left:10px; margin-right: 10px;\">";
+      }
+      html += "<button class=\"btn file-btn\" onclick=\"downloadDeleteButton('" + filename + "', 'download')\">Download</button>";
+      html += "<button class=\"btn file-btn\" onclick=\"downloadDeleteButton('" + filename + "', 'delete')\">Delete</button>";
+      html += "<button class=\"btn file-btn\" onclick=\"downloadDeleteButton('" + filename + "', 'play')\">Play</button>";
+      html += "</div>";
+    }
+    current++;
+    file.close();
+    file = root.openNextFile();
+  }
+  root.close();
+
+  // 生成分页按钮（使用 onclick 翻页）
+  int totalPages = (totalFiles + perPage - 1) / perPage;
+  html += "<div class=\"pagination\">";
+  if (page > 1) {
+    html += "<button class=\"btn\" onclick=\"navigatePage(" + String(page - 1) + ")\">Previous</button>";
+  }
+  for (int p = 1; p <= totalPages; p++) {
+    html += "<button class=\"btn" + String(p == page ? " active" : "") + "\" onclick=\"navigatePage(" + String(p) + ")\">" + String(p) + "</button>";
+  }
+  if (page < totalPages) {
+    html += "<button class=\"btn\" onclick=\"navigatePage(" + String(page + 1) + ")\">Next</button>";
+  }
+  html += "</div>";
+
+  return html;
+}
+
 void configureWebServer() {
   // configure web server
 
@@ -58,6 +114,21 @@ void configureWebServer() {
       return request->requestAuthentication();
     }
 
+  });
+  
+  // /listfiles 和 /list 支持 perPage 参数
+  server->on("/listfiles", HTTP_GET, [](AsyncWebServerRequest *request) {
+    int perPage = request->hasParam("perPage") ? request->getParam("perPage")->value().toInt() : 4;
+    if (perPage < 1) perPage = 4;
+    request->send(200, "text/html", generateFileList(1, perPage));
+  });
+
+  server->on("/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+    int page = request->hasParam("page") ? request->getParam("page")->value().toInt() : 1;
+    int perPage = request->hasParam("perPage") ? request->getParam("perPage")->value().toInt() : 4;
+    if (perPage < 1) perPage = 4;
+    if (page < 1) page = 1;
+    request->send(200, "text/html", generateFileList(page, perPage));
   });
   
        server->on("/slider", HTTP_GET, [] (AsyncWebServerRequest *request) {

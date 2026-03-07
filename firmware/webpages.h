@@ -135,6 +135,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     .file-table tr:last-child td { border-bottom: none; }
     .file-table tr:hover td { background: #16162a; }
     .file-table td img { border-radius: 4px; display: block; }
+    .file-btn:hover { background: #28283e; }
 
     progress { width: 100%; height: 6px; border: none; border-radius: 3px; overflow: hidden; }
     progress::-webkit-progress-bar { background: #1a1a2e; }
@@ -145,6 +146,52 @@ const char index_html[] PROGMEM = R"rawliteral(
     .info-bar { display: flex; flex-wrap: wrap; gap: 6px 20px; }
     .info-item { font-size: 0.82em; color: #444; }
     .info-item b { color: #6060a0; font-weight: 500; }
+  
+    /* 文件列表项 - 让按钮水平对齐、间距均匀 */
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #2a2a46;
+    }
+
+    .file-name {
+      flex-grow: 1;
+      font-weight: 500;
+      color: #c8c8de;
+      word-break: break-all;
+      margin-right: 10px;
+    }
+
+    /* 文件操作按钮 - 与页面其他按钮完全一致 */
+    .file-btn {
+      padding: 6px 12px;
+      font-size: 0.82em;
+      min-width: 80px;          /* 统一按钮宽度，避免对齐乱 */
+      text-align: center;
+    }
+
+    /* 确保最后一个按钮不贴边 */
+    .file-item .file-btn:last-child {
+      margin-right: 0;
+    }
+
+    /* 分页按钮区域 */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .pagination .btn {
+      padding: 6px 12px;
+      font-size: 0.82em;
+      min-width: 36px;
+    }
   </style>
 </head>
 <body>
@@ -378,8 +425,9 @@ function rebootButton() {
 }
 
 // File list — async fetch replaces legacy sync XHR
+var perPage = 10;
 function listFilesButton() {
-  fetch('/listfiles')
+  fetch('/listfiles?perPage=' + perPage)
     .then(function(r){return r.text();})
     .then(function(data){
       document.getElementById('fileAreaTitle').textContent = 'Files';
@@ -405,12 +453,12 @@ function downloadDeleteButton(filename, action) {
       .catch(function(){ showStatus('Failed to play'); });
   }
 }
-window.navigatePage = function(page) {
-  fetch('/list?page='+page)
+function navigatePage(page) {
+  fetch('/list?page=' + page + '&perPage=' + perPage)
     .then(function(r){return r.text();})
-    .then(function(data){ document.getElementById('fileList').innerHTML=data; })
+    .then(function(data){ document.getElementById('fileList').innerHTML = data; })
     .catch(function(){ showStatus('Error'); });
-};
+}
 
 // Upload
 function showUploadButtonFancy() {
